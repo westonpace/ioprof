@@ -60,16 +60,24 @@ async fn main() {
             file.read_exact(&mut buf).await.unwrap();
             let near_read_total_secs = start.elapsed().as_secs_f32();
 
-            let start = std::time::Instant::now();
-            file.seek(std::io::SeekFrom::Start(100 * 1024 * 1024))
-                .await
-                .unwrap();
-            file.read_exact(&mut buf).await.unwrap();
-            let far_read_total_secs = start.elapsed().as_secs_f32();
+            let locations = [
+                19, 1, 18, 2, 17, 3, 16, 4, 15, 5, 14, 6, 13, 7, 12, 8, 11, 9, 10,
+            ];
+            let mut far_read_total_secs = 0.0;
+            for location in locations {
+                let start = std::time::Instant::now();
+                file.seek(std::io::SeekFrom::Start(location * 10 * 1024 * 1024))
+                    .await
+                    .unwrap();
+                file.read_exact(&mut buf).await.unwrap();
+                far_read_total_secs += start.elapsed().as_secs_f32();
+            }
+
+            let far_read_avg_secs = far_read_total_secs / locations.len() as f32;
 
             println!(
                 "{},{},{},{}",
-                open_total_secs, first_read_total_secs, near_read_total_secs, far_read_total_secs
+                open_total_secs, first_read_total_secs, near_read_total_secs, far_read_avg_secs
             );
         })
         .buffer_unordered(NUM_FILES as usize)
