@@ -1,7 +1,8 @@
+use futures::StreamExt;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
-const NUM_FILES: u32 = 10;
-const FILE_SIZE: usize = 1024 * 1024 * 1024;
+const NUM_FILES: u32 = 100;
+const FILE_SIZE: usize = 200 * 1024 * 1024;
 const WRITE_CHUNK: usize = 1024 * 1024;
 
 #[tokio::main]
@@ -40,46 +41,38 @@ async fn main() {
         }
     }
 
-    let mut open_total_secs = 0.0;
-    let mut first_read_total_secs = 0.0;
-    let mut near_read_total_secs = 0.0;
-    let mut far_read_total_secs = 0.0;
+    futures::stream::iter(filenames)
+        .map(|filename| async move {
+            let mut buf = vec![0_u8; 4096];
 
-    for filename in &filenames {
-        let mut buf = vec![0_u8; 4096];
+            let start = std::time::Instant::now();
+            let mut file = tokio::fs::File::open(filename).await.unwrap();
+            let open_total_secs = start.elapsed().as_secs_f32();
 
-        let start = std::time::Instant::now();
-        let mut file = tokio::fs::File::open(filename).await.unwrap();
-        open_total_secs += start.elapsed().as_secs_f32();
+            let start = std::time::Instant::now();
+            file.read_exact(&mut buf).await.unwrap();
+            let first_read_total_secs = start.elapsed().as_secs_f32();
 
-        let start = std::time::Instant::now();
-        file.read_exact(&mut buf).await.unwrap();
-        first_read_total_secs += start.elapsed().as_secs_f32();
+            let start = std::time::Instant::now();
+            file.seek(std::io::SeekFrom::Start(10 * 4096))
+                .await
+                .unwrap();
+            file.read_exact(&mut buf).await.unwrap();
+            let near_read_total_secs = start.elapsed().as_secs_f32();
 
-        let start = std::time::Instant::now();
-        file.seek(std::io::SeekFrom::Start(10 * 4096))
-            .await
-            .unwrap();
-        file.read_exact(&mut buf).await.unwrap();
-        near_read_total_secs += start.elapsed().as_secs_f32();
+            let start = std::time::Instant::now();
+            file.seek(std::io::SeekFrom::Start(100 * 1024 * 1024))
+                .await
+                .unwrap();
+            file.read_exact(&mut buf).await.unwrap();
+            let far_read_total_secs = start.elapsed().as_secs_f32();
 
-        let start = std::time::Instant::now();
-        file.seek(std::io::SeekFrom::Start(100 * 1024 * 1024))
-            .await
-            .unwrap();
-        file.read_exact(&mut buf).await.unwrap();
-        far_read_total_secs += start.elapsed().as_secs_f32();
-    }
-
-    let open_avg_secs = open_total_secs / filenames.len() as f32;
-    println!("Open file average time : {}", open_avg_secs);
-
-    let first_read_avg_secs = first_read_total_secs / filenames.len() as f32;
-    println!("First read average time: {}", first_read_avg_secs);
-
-    let near_read_avg_secs = near_read_total_secs / filenames.len() as f32;
-    println!("Near read average time : {}", near_read_avg_secs);
-
-    let far_read_avg_secs = far_read_total_secs / filenames.len() as f32;
-    println!("Far read average time : {}", far_read_avg_secs);
+            println!(
+                "{},{},{},{}",
+                open_total_secs, first_read_total_secs, near_read_total_secs, far_read_total_secs
+            );
+        })
+        .buffer_unordered(NUM_FILES as usize)
+        .collect::<Vec<_>>()
+        .await;
 }
