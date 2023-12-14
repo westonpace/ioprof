@@ -1,11 +1,33 @@
+use std::fs::File;
+use std::ops::Range;
+use std::sync::Arc;
+
+use bytes::{Bytes, BytesMut};
 use futures::StreamExt;
 use rand::thread_rng;
 use rand::{seq::SliceRandom, Rng};
+use std::os::unix::fs::FileExt;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 const NUM_FILES: u32 = 128;
 const FILE_SIZE: usize = 200 * 1024 * 1024;
 const WRITE_CHUNK: usize = 1024 * 1024;
+
+/// Reads a range of data.
+async fn get_range(file: Arc<File>, range: Range<usize>) -> Bytes {
+    tokio::task::spawn_blocking(move || {
+        let mut buf = BytesMut::with_capacity(range.len());
+        // Safety: `buf` is set with appropriate capacity above. It is
+        // written to below and we check all data is initialized at that point.
+        unsafe { buf.set_len(range.len()) };
+        file.read_exact_at(buf.as_mut(), range.start as u64)
+            .unwrap();
+
+        buf.freeze()
+    })
+    .await
+    .unwrap()
+}
 
 #[tokio::main]
 async fn main() {
@@ -47,34 +69,33 @@ async fn main() {
     futures::stream::iter(filenames)
         .map(|filename| async move {
             let thread_start = std::time::Instant::now();
-            let mut buf = vec![0_u8; 4096];
 
             let start = std::time::Instant::now();
-            let mut file = tokio::fs::File::open(filename).await.unwrap();
+            let file = Arc::new(
+                tokio::fs::File::open(filename)
+                    .await
+                    .unwrap()
+                    .into_std()
+                    .await,
+            );
             let open_total_secs = start.elapsed().as_secs_f32();
 
             let start = std::time::Instant::now();
-            file.read_exact(&mut buf).await.unwrap();
+            get_range(file.clone(), 0..4096).await;
             let first_read_total_secs = start.elapsed().as_secs_f32();
 
             let start = std::time::Instant::now();
-            file.seek(std::io::SeekFrom::Start(10 * 4096))
-                .await
-                .unwrap();
-            file.read_exact(&mut buf).await.unwrap();
+            get_range(file.clone(), (10 * 4096)..(11 * 4096)).await;
             let near_read_total_secs = start.elapsed().as_secs_f32();
 
             // Pick read locations that are 512KiB apart and shuffle them and then read the first two
-            let mut locations = (100..256).map(|i| i * 512 * 1024).collect::<Vec<u64>>();
+            let mut locations = (100..256).map(|i| i * 512 * 1024).collect::<Vec<usize>>();
             locations.shuffle(&mut thread_rng());
 
             let mut far_read_total_secs = 0.0;
             for location in &locations[0..2] {
                 let start = std::time::Instant::now();
-                file.seek(std::io::SeekFrom::Start(*location))
-                    .await
-                    .unwrap();
-                file.read_exact(&mut buf).await.unwrap();
+                get_range(file.clone(), (*location)..(*location + 4096)).await;
                 far_read_total_secs += start.elapsed().as_secs_f32();
             }
 
