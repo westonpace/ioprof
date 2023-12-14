@@ -1,6 +1,6 @@
 use futures::StreamExt;
-use rand::seq::SliceRandom;
 use rand::thread_rng;
+use rand::{seq::SliceRandom, Rng};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 const NUM_FILES: u32 = 100;
@@ -64,12 +64,12 @@ async fn main() {
             file.read_exact(&mut buf).await.unwrap();
             let near_read_total_secs = start.elapsed().as_secs_f32();
 
-            // Pick 256 read locations that are 512KiB apart and shuffle them
-            let mut locations = (0..256).map(|i| i * 512 * 1024).collect::<Vec<u64>>();
+            // Pick read locations that are 512KiB apart and shuffle them and then read the first two
+            let mut locations = (100..256).map(|i| i * 512 * 1024).collect::<Vec<u64>>();
             locations.shuffle(&mut thread_rng());
 
             let mut far_read_total_secs = 0.0;
-            for location in &locations {
+            for location in &locations[0..2] {
                 let start = std::time::Instant::now();
                 file.seek(std::io::SeekFrom::Start(*location))
                     .await
