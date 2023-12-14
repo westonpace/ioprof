@@ -1,4 +1,6 @@
 use futures::StreamExt;
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 const NUM_FILES: u32 = 100;
@@ -41,6 +43,7 @@ async fn main() {
         }
     }
 
+    let full_start = std::time::Instant::now();
     futures::stream::iter(filenames)
         .map(|filename| async move {
             let mut buf = vec![0_u8; 4096];
@@ -60,13 +63,14 @@ async fn main() {
             file.read_exact(&mut buf).await.unwrap();
             let near_read_total_secs = start.elapsed().as_secs_f32();
 
-            let locations = [
-                19, 1, 18, 2, 17, 3, 16, 4, 15, 5, 14, 6, 13, 7, 12, 8, 11, 9, 10,
-            ];
+            // Pick 256 read locations that are 512KiB apart and shuffle them
+            let mut locations = (0..256).map(|i| i * 512 * 1024).collect::<Vec<u64>>();
+            locations.shuffle(&mut thread_rng());
+
             let mut far_read_total_secs = 0.0;
-            for location in locations {
+            for location in &locations {
                 let start = std::time::Instant::now();
-                file.seek(std::io::SeekFrom::Start(location * 10 * 1024 * 1024))
+                file.seek(std::io::SeekFrom::Start(*location))
                     .await
                     .unwrap();
                 file.read_exact(&mut buf).await.unwrap();
@@ -83,4 +87,8 @@ async fn main() {
         .buffer_unordered(NUM_FILES as usize)
         .collect::<Vec<_>>()
         .await;
+    println!(
+        "Total elapsed seconds: {}",
+        full_start.elapsed().as_secs_f32()
+    );
 }
