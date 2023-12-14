@@ -46,6 +46,7 @@ async fn main() {
     let full_start = std::time::Instant::now();
     futures::stream::iter(filenames)
         .map(|filename| async move {
+            let thread_start = std::time::Instant::now();
             let mut buf = vec![0_u8; 4096];
 
             let start = std::time::Instant::now();
@@ -80,8 +81,12 @@ async fn main() {
             let far_read_avg_secs = far_read_total_secs / locations.len() as f32;
 
             println!(
-                "{},{},{},{}",
-                open_total_secs, first_read_total_secs, near_read_total_secs, far_read_avg_secs
+                "{},{},{},{},{}",
+                open_total_secs,
+                first_read_total_secs,
+                near_read_total_secs,
+                far_read_avg_secs,
+                thread_start.elapsed().as_secs_f32()
             );
         })
         .buffer_unordered(NUM_FILES as usize)
