@@ -3,7 +3,7 @@ use rand::thread_rng;
 use rand::{seq::SliceRandom, Rng};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
-const NUM_FILES: u32 = 100;
+const NUM_FILES: u32 = 128;
 const FILE_SIZE: usize = 200 * 1024 * 1024;
 const WRITE_CHUNK: usize = 1024 * 1024;
 
